@@ -4,7 +4,7 @@ export async function POST(req: Request) {
   const form = await req.formData()
   const file = form.get('file') as File | null
   if (!file) return new Response(JSON.stringify({ error: 'no file' }), { status: 400 })
-  const backend = process.env.BACKEND_URL || 'http://127.0.0.1:8000'
+  const backend = process.env.BACKEND_URL || process.env.NEXT_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
   const fd = new FormData()
   fd.append('file', file, (file as any).name || 'audio.webm')
   try {

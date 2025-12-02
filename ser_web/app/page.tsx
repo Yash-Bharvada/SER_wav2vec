@@ -71,7 +71,8 @@ export default function Page() {
     try {
       const fd = new FormData()
       fd.append('file', blob, name)
-      const res = await fetch('/api/ser', { method: 'POST', body: fd })
+      const API_URL = process.env.NEXT_PUBLIC_API_URL
+      const res = await fetch(`${API_URL}/predict`, { method: 'POST', body: fd })
       const text = await res.text()
       let data: any = null
       try { data = JSON.parse(text) } catch { data = null }
