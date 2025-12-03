@@ -8,6 +8,7 @@ import torch, numpy as np, soundfile as sf
 
 app = FastAPI()
 
+# CORS
 origins = os.environ.get('CORS_ORIGINS', '*').split(',') if os.environ.get('CORS_ORIGINS') else ['*']
 app.add_middleware(
     CORSMiddleware,
@@ -17,19 +18,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Paths
 FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
-MODEL_DIR = os.environ.get('MODEL_DIR', os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'best_model')))
 
-model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_DIR)
-fe = AutoFeatureExtractor.from_pretrained(MODEL_DIR)
+# ✔ FIXED MODEL PATH — relative, valid, HuggingFace-safe
+MODEL_DIR = os.environ.get('MODEL_DIR', 'best_model')
+
+# ✔ Load local model only
+model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_DIR, local_files_only=True)
+fe = AutoFeatureExtractor.from_pretrained(MODEL_DIR, local_files_only=True)
+
+# Device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 model.eval()
 
+# Audio processing
 def to_wav16k_mono(data: bytes) -> np.ndarray:
     try:
         p = subprocess.run(
-            [FFMPEG_BIN, '-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-ar', str(fe.sampling_rate), '-ac', '1', '-f', 'wav', 'pipe:1'],
+            [FFMPEG_BIN, '-hide_banner', '-loglevel', 'error', '-i', 'pipe:0',
+             '-ar', str(fe.sampling_rate), '-ac', '1', '-f', 'wav', 'pipe:1'],
             input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
         )
         audio, sr = sf.read(io.BytesIO(p.stdout), dtype='float32', always_2d=False)
@@ -38,7 +47,7 @@ def to_wav16k_mono(data: bytes) -> np.ndarray:
             if sr != fe.sampling_rate:
                 out = librosa.resample(out, orig_sr=sr, target_sr=fe.sampling_rate)
             if out.size < fe.sampling_rate // 10:
-                out = np.pad(out, (0, max(0, fe.sampling_rate - out.size)), mode='constant')
+                out = np.pad(out, (0, fe.sampling_rate - out.size), mode='constant')
             return out
         return np.array(audio, dtype=np.float32)
     except Exception:
@@ -51,13 +60,13 @@ def to_wav16k_mono(data: bytes) -> np.ndarray:
                 if sr != fe.sampling_rate:
                     out = librosa.resample(out, orig_sr=sr, target_sr=fe.sampling_rate)
                 if out.size < fe.sampling_rate // 10:
-                    out = np.pad(out, (0, max(0, fe.sampling_rate - out.size)), mode='constant')
+                    out = np.pad(out, (0, fe.sampling_rate - out.size), mode='constant')
                 return out
             arr = np.array(audio, dtype=np.float32)
             if sr and sr != fe.sampling_rate:
                 arr = librosa.resample(arr, orig_sr=sr, target_sr=fe.sampling_rate)
             if arr.size < fe.sampling_rate // 10:
-                arr = np.pad(arr, (0, max(0, fe.sampling_rate - arr.size)), mode='constant')
+                arr = np.pad(arr, (0, fe.sampling_rate - arr.size), mode='constant')
             return arr
         except Exception:
             try:
@@ -69,6 +78,7 @@ def to_wav16k_mono(data: bytes) -> np.ndarray:
             except Exception:
                 return np.zeros(fe.sampling_rate, dtype=np.float32)
 
+# Predict endpoint
 @app.post('/predict')
 async def predict(file: UploadFile = File(...)):
     try:
@@ -76,23 +86,40 @@ async def predict(file: UploadFile = File(...)):
         audio = to_wav16k_mono(data)
         inputs = fe(audio, sampling_rate=fe.sampling_rate, return_tensors='pt')
         inputs = {k: v.to(device) for k, v in inputs.items()}
+
         with torch.no_grad():
             logits = model(**inputs).logits
+
         probs = torch.softmax(logits, dim=-1)[0].cpu().numpy()
         label_map = model.config.id2label
         label_keys = list(label_map.keys())
         use_str = bool(label_keys) and isinstance(label_keys[0], str)
+
         labels = []
         for i in range(len(probs)):
             if use_str:
                 labels.append(label_map.get(str(i), f"class_{i}"))
             else:
                 labels.append(label_map.get(i, f"class_{i}"))
-        pairs = sorted([(labels[i], float(probs[i])) for i in range(len(probs))], key=lambda x: x[1], reverse=True)
-        dominant = { 'label': pairs[0][0], 'score': pairs[0][1] } if pairs else { 'label': '', 'score': 0.0 }
-        return { 'results': [ { 'label': l, 'score': s } for l, s in pairs ], 'dominant': dominant }
+
+        pairs = sorted(
+            [(labels[i], float(probs[i])) for i in range(len(probs))],
+            key=lambda x: x[1],
+            reverse=True
+        )
+        dominant = {'label': pairs[0][0], 'score': pairs[0][1]} if pairs else {'label': '', 'score': 0.0}
+
+        return {
+            'results': [{'label': l, 'score': s} for l, s in pairs],
+            'dominant': dominant
+        }
+
     except Exception as e:
-        return JSONResponse(status_code=400, content={ 'error': 'failed to process audio', 'message': f"{e.__class__.__name__}: {e}" })
+        return JSONResponse(
+            status_code=400,
+            content={'error': 'failed to process audio', 'message': f"{e.__class__.__name__}: {e}"}
+        )
+
 @app.get('/')
 def root():
-    return { 'status': 'ok' }
+    return {'status': 'ok'}
