@@ -8,15 +8,24 @@ import torch, numpy as np, soundfile as sf
 
 app = FastAPI()
 
-# CORS
-origins = os.environ.get('CORS_ORIGINS', '*').split(',') if os.environ.get('CORS_ORIGINS') else ['*']
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+origins_env = os.environ.get('CORS_ORIGINS')
+if origins_env:
+    origins = [o.strip() for o in origins_env.split(',') if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r".*",
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Paths
 FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
