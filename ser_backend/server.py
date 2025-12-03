@@ -1,12 +1,12 @@
 import os, io, subprocess, tempfile
 from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, ORJSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import Wav2Vec2ForSequenceClassification, AutoFeatureExtractor
 import librosa
 import torch, numpy as np, soundfile as sf
 
-app = FastAPI()
+app = FastAPI(default_response_class=ORJSONResponse)
 
 origins_env = os.environ.get('CORS_ORIGINS')
 if origins_env:
@@ -52,6 +52,14 @@ model, fe = load_local_or_repo()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 model.eval()
+
+# Torch performance
+try:
+    torch.set_num_threads(int(os.environ.get('TORCH_NUM_THREADS', '1')))
+    torch.set_num_interop_threads(int(os.environ.get('TORCH_NUM_INTEROP_THREADS', '1')))
+    torch.set_float32_matmul_precision('medium')
+except Exception:
+    pass
 
 # Audio processing
 def to_wav16k_mono(data: bytes) -> np.ndarray:
@@ -107,7 +115,7 @@ async def predict(file: UploadFile = File(...)):
         inputs = fe(audio, sampling_rate=fe.sampling_rate, return_tensors='pt')
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
-        with torch.no_grad():
+        with torch.inference_mode():
             logits = model(**inputs).logits
 
         probs = torch.softmax(logits, dim=-1)[0].cpu().numpy()

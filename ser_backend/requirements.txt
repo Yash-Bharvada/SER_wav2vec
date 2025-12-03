@@ -1,5 +1,5 @@
 fastapi==0.115.4
-uvicorn==0.32.0
+uvicorn[standard]==0.32.0
 transformers==4.53.3
 
 --extra-index-url https://download.pytorch.org/whl/cpu
@@ -12,3 +12,4 @@ safetensors==0.4.5
 numpy==2.1.2
 python-multipart==0.0.9
 audioread==3.0.1
+orjson==3.10.7
