@@ -143,3 +143,12 @@ async def predict(file: UploadFile = File(...)):
 @app.get('/')
 def root():
     return {'status': 'ok'}
+
+@app.head('/')
+def root_head():
+    return {}
+
+@app.get('/favicon.ico')
+def favicon():
+    from fastapi import Response
+    return Response(status_code=204)
