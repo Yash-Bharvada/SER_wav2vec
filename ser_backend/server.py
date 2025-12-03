@@ -23,10 +23,21 @@ FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
 
 # ✔ FIXED MODEL PATH — relative, valid, HuggingFace-safe
 MODEL_DIR = os.environ.get('MODEL_DIR', 'best_model')
+MODEL_REPO_ID = os.environ.get('MODEL_REPO_ID')
 
-# ✔ Load local model only
-model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_DIR, local_files_only=True)
-fe = AutoFeatureExtractor.from_pretrained(MODEL_DIR, local_files_only=True)
+def load_local_or_repo():
+    try:
+        m = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_DIR, local_files_only=True)
+        f = AutoFeatureExtractor.from_pretrained(MODEL_DIR, local_files_only=True)
+        return m, f
+    except Exception:
+        if MODEL_REPO_ID:
+            m = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_REPO_ID)
+            f = AutoFeatureExtractor.from_pretrained(MODEL_REPO_ID)
+            return m, f
+        raise
+
+model, fe = load_local_or_repo()
 
 # Device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
